@@ -124,6 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->nice = 20;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -299,6 +300,7 @@ kfork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+  np->nice = p->nice;
   np->state = RUNNABLE;
   release(&np->lock);
 
