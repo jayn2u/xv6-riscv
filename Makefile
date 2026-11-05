@@ -1,7 +1,7 @@
 #-----------------------------------------------------
 
-STUDENT_ID = 
-ASSIGNMENT_NO = 
+STUDENT_ID = 20211830
+ASSIGNMENT_NO = 2
 
 ifndef STUDENT_ID
 $(error Please set STUDENT_ID in Makefile)
@@ -179,7 +179,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
-CPUS := 3
+CPUS := 1
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
