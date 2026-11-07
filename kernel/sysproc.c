@@ -127,3 +127,13 @@ sys_setnice(void)
   argint(1, &value);
   return ksetnice(pid, value);
 }
+
+uint64
+sys_ps(void)
+{
+  int pid;
+
+  argint(0, &pid);
+  kps(pid);
+  return 0; 
+}

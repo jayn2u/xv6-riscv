@@ -730,3 +730,31 @@ ksetnice(int pid, int value)
 
   return -1;
 }
+
+void
+kps(int pid)
+{ 
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [USED]      "used",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  struct proc *p;
+  char *state;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state == UNUSED)
+      continue;
+    if(pid != 0 && p->pid != pid)
+      continue;
+    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+      state = states[p->state];
+    else
+      state = "???";
+
+    printf("%d %s %s %d\n", p->pid, state, p->name, p->nice);
+  }
+}
