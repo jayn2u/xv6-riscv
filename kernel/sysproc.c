@@ -125,7 +125,12 @@ sys_setnice(void)
 
   argint(0, &pid);
   argint(1, &value);
-  return ksetnice(pid, value);
+
+  if(ksetnice(pid, value) == 0){
+    yield();
+    return 0;
+  }
+  return -1;
 }
 
 uint64

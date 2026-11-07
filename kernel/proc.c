@@ -428,6 +428,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  int last = NPROC - 1;  // index of the process that ran last
 
   c->proc = 0;
   for(;;){
@@ -439,28 +440,46 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
+    // 1) Scan circularly from last+1 and remember the RUNNABLE process
+    //    with the lowest nice. The strict "<" keeps the first one found
+    //    among equals, i.e. the one after last: this gives round-robin.
+    int best = -1;
+    int best_nice = 41;  // larger than the valid range [0, 40]
+    for(int i = 1; i <= NPROC; i++){
+      int idx = (last + i) % NPROC;
+      p = &proc[idx];
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+      if(p->state == RUNNABLE && p->nice < best_nice){
+        best = idx;
+        best_nice = p->nice;
       }
       release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    // 2) nothing to run; stop running on this core until an interrupt.
+    if(best < 0){
       asm volatile("wfi");
+      continue;
     }
+
+    // 3) Re-take the lock and re-check: the state may have changed
+    //    since the scan released it.
+    p = &proc[best];
+    acquire(&p->lock);
+    if(p->state == RUNNABLE){
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      last = best;
+      swtch(&c->context, &p->context);
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+    }
+    release(&p->lock);
   }
 }
 
