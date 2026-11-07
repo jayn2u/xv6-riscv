@@ -774,6 +774,6 @@ kps(int pid)
     else
       state = "???";
 
-    printf("%d %s %s %d\n", p->pid, state, p->name, p->nice);
+    printf("%d %d %s %s\n", p->pid, p->nice, state, p->name);
   }
 }
