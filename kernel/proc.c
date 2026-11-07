@@ -690,3 +690,43 @@ procdump(void)
     printf("\n");
   }
 }
+
+int
+kgetnice(int pid)
+{
+  if(pid <= 0) return -1;
+
+  struct proc *p;
+  int nice;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      nice = p->nice;
+      release(&p->lock);
+      return nice;
+    }
+    release(&p->lock);
+  }
+  return -1;
+}
+
+int
+ksetnice(int pid, int value)
+{
+  struct proc *p;
+
+  if(value > 40 || value < 0 || pid <= 0) return -1;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      p->nice = value;
+      release(&p->lock);
+      return 0;
+    }
+    release(&p->lock);
+  }
+
+  return -1;
+}
