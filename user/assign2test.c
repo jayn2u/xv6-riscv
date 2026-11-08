@@ -193,6 +193,157 @@ test_setnice_preempt(void)
   setnice(getpid(), 20);
 }
 
+// ---------- 7. self-demotion yields CPU to runnable child ----------
+// Parent (nice 10) demotes itself to nice 30 while a child (nice 15) is runnable.
+// The child should run before setnice returns to parent.
+static void
+test_self_demote(void)
+{
+  int res[2], gate[2];
+  pipe(res); pipe(gate);
+  setnice(getpid(), 10);
+  int pid = fork();
+  if(pid == 0){
+    char c;
+    read(gate[0], &c, 1);
+    write(res[1], "C", 1);
+    exit(0);
+  }
+  setnice(pid, 15);
+  write(gate[1], "x", 1); // child is RUNNABLE (nice 15)
+  spin(20);
+  write(res[1], "P", 1);  // parent writes P (nice 10 < 15, parent keeps CPU)
+  setnice(getpid(), 30);  // parent demotes itself to nice 30 -> yields!
+  write(res[1], "Q", 1);  // parent writes Q after returning
+  wait(0);
+  char buf[4] = {0};
+  read(res[0], buf, 3);
+  printf("sequence: %s (expect PCQ)\n", buf);
+  check(buf[0] == 'P' && buf[1] == 'C' && buf[2] == 'Q',
+        "self-demotion via setnice yields to higher-priority runnable child");
+  close(gate[0]); close(gate[1]); close(res[0]); close(res[1]);
+  setnice(getpid(), 20);
+}
+
+// ---------- 8. round-robin among 3 equal-nice processes ----------
+// Three equal-nice children write markers after each work chunk.
+static void
+test_rr_three(void)
+{
+  int gate[2], res[2];
+  pipe(gate); pipe(res);
+  setnice(getpid(), 0);
+  int pids[3];
+  for(int i = 0; i < 3; i++){
+    pids[i] = fork();
+    if(pids[i] == 0){
+      char c;
+      read(gate[0], &c, 1);
+      char id = 'A' + i;
+      for(int k = 0; k < 6; k++){
+        spin(30);
+        write(res[1], &id, 1);
+      }
+      exit(0);
+    }
+  }
+  for(int i = 0; i < 3; i++)
+    setnice(pids[i], 15);
+  write(gate[1], "xxx", 3);
+  for(int i = 0; i < 3; i++)
+    wait(0);
+  char buf[19] = {0};
+  read(res[0], buf, 18);
+  printf("3-proc sequence: %s\n", buf);
+  int switches = 0;
+  for(int i = 1; i < 18; i++)
+    if(buf[i] != buf[i-1]) switches++;
+  check(switches >= 6, "3 equal-nice processes interleave across round-robin cycles");
+  close(gate[0]); close(gate[1]); close(res[0]); close(res[1]);
+  setnice(getpid(), 20);
+}
+
+// ---------- 9. grandchild inherits parent's updated nice ----------
+static void
+test_grandchild(void)
+{
+  int p[2];
+  pipe(p);
+  setnice(getpid(), 12);
+  int cpid = fork();
+  if(cpid == 0){
+    // child inherits 12, then sets its nice to 4
+    setnice(getpid(), 4);
+    int gpid = fork();
+    if(gpid == 0){
+      // grandchild inherits child's nice (4)
+      int v = getnice(getpid());
+      write(p[1], &v, sizeof(v));
+      exit(0);
+    }
+    wait(0);
+    exit(0);
+  }
+  int v = -1;
+  read(p[0], &v, sizeof(v));
+  wait(0);
+  close(p[0]); close(p[1]);
+  check(v == 4, "grandchild inherits updated parent's nice (4)");
+  setnice(getpid(), 20);
+}
+
+// ---------- 10. getnice on ZOMBIE process ----------
+static void
+test_zombie(void)
+{
+  int p[2];
+  pipe(p);
+  int cpid = fork();
+  if(cpid == 0){
+    setnice(getpid(), 8);
+    char c = 'x';
+    write(p[1], &c, 1);
+    exit(0); // child becomes ZOMBIE until parent calls wait()
+  }
+  char c;
+  read(p[0], &c, 1); // wait until child wrote and is exiting
+  spin(10);          // give time for child to complete exit()
+  int znice = getnice(cpid);
+  wait(0);           // reap child
+  close(p[0]); close(p[1]);
+  check(znice == 8, "getnice on ZOMBIE process returns its nice (8)");
+}
+
+// ---------- 11. failed setnice does not yield ----------
+static void
+test_setnice_fail_no_yield(void)
+{
+  int res[2], gate[2];
+  pipe(res); pipe(gate);
+  setnice(getpid(), 10);
+  int pid = fork();
+  if(pid == 0){
+    char c;
+    read(gate[0], &c, 1);
+    write(res[1], "C", 1);
+    exit(0);
+  }
+  setnice(pid, 5); // child has higher priority (nice 5)
+  write(gate[1], "x", 1); // child becomes RUNNABLE
+  // Invalid setnice should fail (-1) and NOT yield
+  int r = setnice(getpid(), 45);
+  write(res[1], "P", 1);  // parent should still have CPU
+  setnice(getpid(), 20);  // valid setnice -> yields to child (nice 5)
+  write(res[1], "Q", 1);
+  wait(0);
+  char buf[4] = {0};
+  read(res[0], buf, 3);
+  printf("sequence: %s (expect PCQ)\n", buf);
+  check(r == -1 && buf[0] == 'P', "failed setnice returns -1 and does not yield");
+  close(gate[0]); close(gate[1]); close(res[0]); close(res[1]);
+  setnice(getpid(), 20);
+}
+
 int
 main(void)
 {
@@ -202,6 +353,11 @@ main(void)
   test_priority();
   test_rr();
   test_setnice_preempt();
+  test_self_demote();
+  test_rr_three();
+  test_grandchild();
+  test_zombie();
+  test_setnice_fail_no_yield();
   printf("RESULT: %d passed, %d failed\n", pass, fail);
   exit(0);
 }
