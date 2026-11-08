@@ -176,7 +176,7 @@ test_setnice_preempt(void)
     exit(0);
   }
   setnice(pid, 30);
-  write(gate[1], "x", 1);  // child becomes RUNNABLE but nice 30 < parent
+  write(gate[1], "x", 1);  // child RUNNABLE, nice 30 > parent nice 10
   // Parent keeps the CPU (child is lower priority). Give a little time
   // to prove the child does NOT run while parent is higher priority.
   spin(20);
@@ -344,9 +344,228 @@ test_setnice_fail_no_yield(void)
   setnice(getpid(), 20);
 }
 
-int
-main(void)
+// spawn n children with the given nice values; each waits on the gate,
+// then writes its letter once in every timer tick it gets to run, until it
+// has run for `slots` ticks. The marker string is the CPU order per tick.
+static void
+run_markers(int n, int *nices, char *letters, int slots, char *out, int outlen)
 {
+  int gate[2], res[2], pids[8];
+  pipe(gate); pipe(res);
+  setnice(getpid(), 0);
+  for(int i = 0; i < n; i++){
+    pids[i] = fork();
+    if(pids[i] == 0){
+      char c;
+      read(gate[0], &c, 1);
+      int last = -1, done = 0;
+      while(done < slots){
+        int t = uptime();
+        if(t != last){
+          write(res[1], &letters[i], 1);
+          last = t;
+          done++;
+        }
+      }
+      exit(0);
+    }
+  }
+  for(int i = 0; i < n; i++)
+    setnice(pids[i], nices[i]);
+  write(gate[1], "xxxxxxxx", n);
+  for(int i = 0; i < n; i++)
+    wait(0);
+  int got = 0;
+  while(got < outlen - 1 && got < n * slots){
+    int r = read(res[0], out + got, n * slots - got);
+    if(r <= 0) break;
+    got += r;
+  }
+  out[got] = 0;
+  close(gate[0]); close(gate[1]); close(res[0]); close(res[1]);
+  setnice(getpid(), 20);
+}
+
+// ---------- 12. fixed circular order among three equal-nice processes ----------
+// One letter per timer tick: the CPU must rotate as out[i] == out[i-3].
+static void
+test_rr_cycle(void)
+{
+  int nices[3] = {10, 10, 10};
+  char out[32];
+  run_markers(3, nices, "ABC", 6, out, sizeof(out));
+  printf("tick sequence: %s\n", out);
+  int ok = out[0] != out[1] && out[1] != out[2] && out[0] != out[2];
+  for(int i = 3; out[i]; i++)
+    if(out[i] != out[i-3]) ok = 0;
+  check(ok, "three equal-nice processes run in a fixed circular order");
+}
+
+// ---------- 13. two priority groups ----------
+// A, B have nice 5; C, D have nice 15. All A/B ticks must come before
+// any C/D tick, and each pair must alternate inside its group.
+static void
+test_groups(void)
+{
+  int nices[4] = {5, 5, 15, 15};
+  char out[32];
+  run_markers(4, nices, "ABCD", 5, out, sizeof(out));
+  printf("tick sequence: %s\n", out);
+  int lastHigh = -1, firstLow = -1, swHigh = 0, swLow = 0;
+  char prevHigh = 0, prevLow = 0;
+  for(int i = 0; out[i]; i++){
+    if(out[i] == 'A' || out[i] == 'B'){
+      lastHigh = i;
+      if(prevHigh && prevHigh != out[i]) swHigh++;
+      prevHigh = out[i];
+    } else {
+      if(firstLow < 0) firstLow = i;
+      if(prevLow && prevLow != out[i]) swLow++;
+      prevLow = out[i];
+    }
+  }
+  check(lastHigh < firstLow, "nice 5 group finishes before nice 15 group starts");
+  check(swHigh >= 2 && swLow >= 2, "each group alternates inside itself (round-robin)");
+}
+
+// ---------- 14. a sleeping high-priority process takes the CPU back ----------
+// H (nice 0) sleeps for 3 ticks; L (nice 20) works meanwhile. After H
+// wakes, it must get the CPU at a later timer tick, before L finishes.
+static void
+test_wakeup(void)
+{
+  int gate[2], res[2], h, l;
+  pipe(gate); pipe(res);
+  setnice(getpid(), 0);
+  h = fork();
+  if(h == 0){
+    char c;
+    read(gate[0], &c, 1);
+    pause(3);
+    write(res[1], "H", 1);
+    exit(0);
+  }
+  l = fork();
+  if(l == 0){
+    char c;
+    read(gate[0], &c, 1);
+    for(int k = 0; k < 30; k++){
+      spin(20);
+      write(res[1], "L", 1);
+    }
+    exit(0);
+  }
+  setnice(h, 0);
+  setnice(l, 20);
+  write(gate[1], "xx", 2);
+  wait(0); wait(0);
+  char out[40];
+  int got = 0;
+  while(got < 31){
+    int r = read(res[0], out + got, 31 - got);
+    if(r <= 0) break;
+    got += r;
+  }
+  out[got] = 0;
+  printf("marker sequence: %s\n", out);
+  int pos = -1;
+  for(int i = 0; out[i]; i++)
+    if(out[i] == 'H') pos = i;
+  check(pos > 0 && pos < got - 1, "woken high-priority process preempts the low one");
+  close(gate[0]); close(gate[1]); close(res[0]); close(res[1]);
+  setnice(getpid(), 20);
+}
+
+// ---------- 15. remaining edge cases ----------
+static void
+test_edges(void)
+{
+  int me = getpid();
+
+  // pid 0 and negative pids are rejected even with a valid value
+  check(setnice(0, 10) == -1 && setnice(-5, 10) == -1, "setnice(0 or negative pid, valid value) == -1");
+
+  // values far outside the range
+  check(setnice(me, 2147483647) == -1 && setnice(me, -2147483647) == -1,
+        "setnice with INT_MAX / -INT_MAX is rejected");
+
+  // setting the same value succeeds and keeps it
+  setnice(me, 20);
+  check(setnice(me, 20) == 0 && getnice(me) == 20, "setnice to the same value succeeds");
+
+  // boundary values are inherited too
+  int p[2];
+  pipe(p);
+  int b[2] = {0, 40};
+  for(int i = 0; i < 2; i++){
+    setnice(me, b[i]);
+    int pid = fork();
+    if(pid == 0){
+      int v = getnice(getpid());
+      write(p[1], &v, sizeof(v));
+      exit(0);
+    }
+    int v = -1;
+    read(p[0], &v, sizeof(v));
+    wait(0);
+    check(v == b[i], b[i] == 0 ? "child inherits nice 0" : "child inherits nice 40");
+  }
+  setnice(me, 20);
+
+  // exec keeps nice: the child execs this program in "nicecheck" mode
+  setnice(me, 7);
+  int pid = fork();
+  if(pid == 0){
+    char *argv[] = {"assign2test", "nicecheck", 0};
+    exec("assign2test", argv);
+    exit(2);
+  }
+  int st = -1;
+  wait(&st);
+  check(st == 0, "nice is kept across exec() (7)");
+  setnice(me, 20);
+
+  // zombie shows up in ps; after wait() the pid is gone
+  pid = fork();
+  if(pid == 0){
+    setnice(getpid(), 12);
+    exit(0);
+  }
+  pause(2);
+  printf("--- ps(zombie child) ---\n");
+  ps(pid);
+  wait(0);
+  check(getnice(pid) == -1 && setnice(pid, 10) == -1, "getnice/setnice on a reaped pid == -1");
+  printf("--- ps(reaped pid), ps(-1): expect nothing ---\n");
+  ps(pid);
+  ps(-1);
+
+  // a RUNNABLE lower-priority child shows up as runble in ps
+  int gate[2];
+  pipe(gate);
+  setnice(me, 0);
+  pid = fork();
+  if(pid == 0){
+    char c;
+    read(gate[0], &c, 1);
+    spin(5);
+    exit(0);
+  }
+  setnice(pid, 30);
+  write(gate[1], "x", 1);
+  printf("--- ps(runnable child) ---\n");
+  ps(pid);
+  wait(0);
+  close(gate[0]); close(gate[1]); close(p[0]); close(p[1]);
+  setnice(me, 20);
+}
+
+int
+main(int argc, char **argv)
+{
+  if(argc == 2 && strcmp(argv[1], "nicecheck") == 0)
+    exit(getnice(getpid()) == 7 ? 0 : 1);
+
   test_basic();
   test_inherit();
   test_ps();
@@ -358,6 +577,10 @@ main(void)
   test_grandchild();
   test_zombie();
   test_setnice_fail_no_yield();
+  test_rr_cycle();
+  test_groups();
+  test_wakeup();
+  test_edges();
   printf("RESULT: %d passed, %d failed\n", pass, fail);
   exit(0);
 }
