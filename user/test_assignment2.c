@@ -6,7 +6,7 @@ main(void)
 {
   int gate[2], result[2];
   int pids[3], count = 0;
-  int values[3] = {28, 12, 4};
+  int values[3] = {19, 34, 6};
   char names[3] = {'C', 'B', 'A'};
   char order[4] = {0};
 
