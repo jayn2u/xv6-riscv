@@ -150,6 +150,46 @@ fail:
   return 1;
 }
 
+static int
+test_lower_nice_switches_immediately(void)
+{
+  int result[2];
+  char order[4] = {0};
+  int pid, bad = 0;
+
+  if(pipe(result) < 0)
+    return 1;
+  if(setnice(getpid(), 10) < 0)
+    return 1;
+
+  pid = fork();
+  if(pid < 0)
+    return 1;
+  if(pid == 0){
+    close(result[0]);
+    if(write(result[1], "C", 1) != 1)
+      exit(1);
+    exit(0);
+  }
+
+  if(setnice(pid, 30) < 0 ||
+     write(result[1], "P", 1) != 1 ||
+     setnice(pid, 0) < 0 ||
+     write(result[1], "Q", 1) != 1)
+    bad = 1;
+
+  close(result[1]);
+  if(read(result[0], order, 3) != 3)
+    bad = 1;
+  close(result[0]);
+  if(wait(0) < 0)
+    bad = 1;
+  setnice(getpid(), 0);
+
+  printf("lower nice order: %s\n", order);
+  return bad || strcmp(order, "PCQ") != 0;
+}
+
 int
 main(void)
 {
@@ -160,6 +200,7 @@ main(void)
 
   failed += test_completion_order();
   failed += test_same_nice_interleave();
+  failed += test_lower_nice_switches_immediately();
 
   if(failed){
     fprintf(2, "scheduler test failed (%d)\n", failed);
