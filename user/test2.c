@@ -66,6 +66,6 @@ fail:
     kill(pids[i]);
   while(wait(0) >= 0)
     ;
-  fprintf(2, "schedtest failed\n");
+  fprintf(2, "scheduler test failed\n");
   exit(1);
 }
