@@ -241,28 +241,7 @@ test_nice_inherited_by_grandchild(void)
   return bad || v != 4;
 }
 
-static int
-existing_tests(void)
-{
-  int failed = 0;
-
-  if(setnice(getpid(), 0) < 0)
-    exit(1);
-
-  failed += test_completion_order();
-  failed += test_same_nice_interleave();
-  failed += test_lower_nice_switches_immediately();
-  failed += test_nice_inherited_by_grandchild();
-
-  if(failed){
-    fprintf(2, "scheduler test failed (%d)\n", failed);
-    exit(1);
-  }
-  printf("scheduler test passed\n");
-  exit(0);
-}
-
-// 테스트 10
+// 좀비 자식의 nice 조회
 static int
 test_zombie_nice(void)
 {
@@ -270,7 +249,7 @@ test_zombie_nice(void)
 
   pid = fork();
   if(pid < 0){
-    fprintf(2, "test10: fork failed\n");
+    fprintf(2, "zombie nice: fork failed\n");
     return 1;
   }
   if(pid == 0){
@@ -283,7 +262,7 @@ test_zombie_nice(void)
   // 잘못된 주소로 copyout을 실패시켜 freeproc 전에 반환하므로 유일한 자식은 회수되지 않는다.
   // 파이프 데이터나 EOF만으로는 종료 완료를 확인할 수 없다.
   if(wait((int *)-1) != -1){
-    fprintf(2, "test10: invalid-status wait unexpectedly succeeded\n");
+    fprintf(2, "zombie nice: invalid-status wait unexpectedly succeeded\n");
     return 1;
   }
 
@@ -294,31 +273,20 @@ test_zombie_nice(void)
     bad = 1;
 
   if(wait(&status) != pid){
-    fprintf(2, "test10: reap failed\n");
+    fprintf(2, "zombie nice: reap failed\n");
     kill(pid);
     while(wait(0) >= 0)
       ;
     return 1;
   }
   if(status != 0){
-    fprintf(2, "test10: child status %d (expected 0)\n", status);
+    fprintf(2, "zombie nice: child status %d (expected 0)\n", status);
     bad = 1;
   }
   return bad;
 }
 
-static int
-case10(void)
-{
-  if(test_zombie_nice()){
-    fprintf(2, "test10 failed\n");
-    exit(1);
-  }
-  printf("test10 passed\n");
-  exit(0);
-}
-
-// 테스트 11
+// 실패한 setnice의 반환값과 nice 보존
 static int
 test_failed_setnice(void)
 {
@@ -392,6 +360,10 @@ test_failed_setnice(void)
   // C는 Q보다 먼저 기록되어야 한다. C와 P의 순서는 관찰 정보다.
   if(strcmp(order, "PCQ") != 0 && strcmp(order, "CPQ") != 0)
     bad = 1;
+  // PCQ가 나와도 어떤 커널 경로가 실행되었는지는 알 수 없다.
+  // 잘못된 호출 이전을 포함해 타이머 선점이 발생하면 CPQ가 나올 수 있다.
+  // 이 표식은 개별 사건의 기록이며 전체 스케줄러 실행 기록은 아니다.
+  printf("No voluntary yield on failure: unproven without instrumentation.\n");
   return bad;
 
 fail:
@@ -408,23 +380,7 @@ fail:
   return 1;
 }
 
-static int
-case11(void)
-{
-  printf("test11: run with CPUS=1\n");
-  if(test_failed_setnice()){
-    fprintf(2, "test11 failed\n");
-    exit(1);
-  }
-  printf("test11 observable checks passed\n");
-  printf("No voluntary yield on failure: unproven without instrumentation.\n");
-  // PCQ가 나와도 어떤 커널 경로가 실행되었는지는 알 수 없다.
-  // 잘못된 호출 이전을 포함해 타이머 선점이 발생하면 CPQ가 나올 수 있다.
-  // 이 표식은 개별 사건의 기록이며 전체 스케줄러 실행 기록은 아니다.
-  exit(0);
-}
-
-// 테스트 12
+// 같은 우선순위인 세 작업자의 진행
 static int
 test_three_worker_round_robin(void)
 {
@@ -542,18 +498,7 @@ fail:
   return 1;
 }
 
-static int
-case12(void)
-{
-  if(test_three_worker_round_robin()){
-    fprintf(2, "test12: worker progress failed\n");
-    exit(1);
-  }
-  printf("test12: worker progress passed\n");
-  exit(0);
-}
-
-// 테스트 13
+// 서로 다른 우선순위 묶음의 진행
 static int
 test_priority_groups(void)
 {
@@ -647,7 +592,7 @@ test_priority_groups(void)
   for(int i = 0; i < 4; i++)
     if(counts[i] != 5)
       bad = 1;
-  printf("case 13 progress markers: %s\n", order);
+  printf("priority groups progress markers: %s\n", order);
   printf("group precedence and five markers each: %s\n", bad ? "FAIL" : "PASS");
   printf("within-group marker changes: %d, %d\n", changes[0], changes[1]);
   // 변화가 두 번 이상이면 두 작업자가 각각 연속으로 끝난 경우는 배제된다. 정확한 교대는
@@ -672,33 +617,22 @@ fail:
   }
   while(wait(0) >= 0)
     ;
-  fprintf(2, "case 13 setup, worker, or pipe failure\n");
+  fprintf(2, "priority groups setup, worker, or pipe failure\n");
   return 1;
 }
 
-static int
-case13(void)
-{
-  if(test_priority_groups()){
-    fprintf(2, "case 13 diagnostic failed\n");
-    exit(1);
-  }
-  printf("case 13 diagnostic passed\n");
-  exit(0);
-}
+// 잠들었다 깨어난 높은 우선순위 작업자의 진행
+#define LOW_PRIORITY_MARKERS 30
 
-// 테스트 14
-#define CASE14_MARKERS 30
-
-struct case14_event {
+struct sleep_event {
   int name;
   uint tick;
 };
 
 static int
-case14_record(int fd, int name)
+record_sleep_event(int fd, int name)
 {
-  struct case14_event e = {name, uptime()};
+  struct sleep_event e = {name, uptime()};
   return write(fd, &e, sizeof(e)) == sizeof(e) ? 0 : -1;
 }
 
@@ -709,7 +643,7 @@ test_sleep_priority(void)
   int pids[2] = {-1, -1};
   int low = 0, high = 0, before = -1, started = 0;
   uint start = 0, elapsed = 0;
-  char order[CASE14_MARKERS + 2] = {0};
+  char order[LOW_PRIORITY_MARKERS + 2] = {0};
   int used = 0;
 
   if(setnice(getpid(), 0) < 0 ||
@@ -731,18 +665,18 @@ test_sleep_priority(void)
         exit(1);
 
       if(i == 0){
-        if(case14_record(result[1], 'S') < 0 || pause(3) < 0 ||
-           case14_record(result[1], 'H') < 0)
+        if(record_sleep_event(result[1], 'S') < 0 || pause(3) < 0 ||
+           record_sleep_event(result[1], 'H') < 0)
           exit(1);
       } else {
-        for(int j = 0; j < CASE14_MARKERS; j++){
+        for(int j = 0; j < LOW_PRIORITY_MARKERS; j++){
           uint tick = uptime();
           // 자발적으로 잠들지 않고 표식마다 최소 한 틱 동안 CPU 작업을 한다.
           do {
             for(volatile int n = 0; n < 10000; n++)
               ;
           } while((uint)uptime() - tick < 1);
-          if(case14_record(result[1], 'L') < 0)
+          if(record_sleep_event(result[1], 'L') < 0)
             exit(1);
         }
       }
@@ -779,7 +713,7 @@ test_sleep_priority(void)
   }
 
   for(;;){
-    struct case14_event e;
+    struct sleep_event e;
     int size = 0;
     while(size < sizeof(e)){
       int n = read(result[0], (char *)&e + size, sizeof(e) - size);
@@ -798,7 +732,7 @@ test_sleep_priority(void)
       start = e.tick;
       continue;
     }
-    if(!started || used >= CASE14_MARKERS + 1)
+    if(!started || used >= LOW_PRIORITY_MARKERS + 1)
       goto fail;
     if(e.name == 'L'){
       low++;
@@ -815,13 +749,13 @@ test_sleep_priority(void)
   close(result[0]);
   result[0] = -1;
 
-  printf("case 14 progress: %s\n", order);
+  printf("sleep priority progress: %s\n", order);
   printf("H elapsed ticks: %d; L markers before H: %d of %d\n",
          elapsed, before, low);
   printf("markers show progress, not a complete scheduler trace\n");
   // H의 고정 표식 위치나 비동기 깨우기에 의한 즉시 선점을 주장하지 않는다.
-  return !started || high != 1 || low != CASE14_MARKERS || elapsed < 3 ||
-         before <= 0 || before >= CASE14_MARKERS;
+  return !started || high != 1 || low != LOW_PRIORITY_MARKERS || elapsed < 3 ||
+         before <= 0 || before >= LOW_PRIORITY_MARKERS;
 
 fail:
   for(int i = 0; i < 2; i++)
@@ -838,20 +772,9 @@ fail:
   return 1;
 }
 
+// nice 값과 상속 및 프로세스 상태 검사
 static int
-case14(void)
-{
-  if(test_sleep_priority()){
-    fprintf(2, "case 14 failed (run with CPUS=1)\n");
-    exit(1);
-  }
-  printf("case 14 passed\n");
-  exit(0);
-}
-
-// 테스트 15
-static int
-case15_check(char *name, int got, int want)
+check_value(char *name, int got, int want)
 {
   if(got == want)
     return 0;
@@ -860,51 +783,51 @@ case15_check(char *name, int got, int want)
 }
 
 static int
-case15_reap(int pid, int expected)
+reap_child(int pid, int expected)
 {
   int status = 12345;
   int got = wait(&status);
-  int bad = case15_check("wait pid", got, pid);
+  int bad = check_value("wait pid", got, pid);
 
   if(got == pid)
-    bad += case15_check("child status", status, expected);
+    bad += check_value("child status", status, expected);
   return bad;
 }
 
 static int
-case15_test_values(void)
+test_nice_values(void)
 {
   int me = getpid(), bad = 0;
 
   if(setnice(me, 20) != 0)
     return 1;
-  bad += case15_check("INT_MAX rejected", setnice(me, 2147483647), -1);
-  bad += case15_check("INT_MAX preserves nice", getnice(me), 20);
+  bad += check_value("INT_MAX rejected", setnice(me, 2147483647), -1);
+  bad += check_value("INT_MAX preserves nice", getnice(me), 20);
   // -INT_MAX는 INT_MIN이 아니다.
-  bad += case15_check("-INT_MAX rejected", setnice(me, -2147483647), -1);
-  bad += case15_check("-INT_MAX preserves nice", getnice(me), 20);
-  bad += case15_check("same nice succeeds", setnice(me, 20), 0);
-  bad += case15_check("same nice remains 20", getnice(me), 20);
-  bad += case15_check("get pid 0", getnice(0), -1);
-  bad += case15_check("set pid 0", setnice(0, 20), -1);
-  bad += case15_check("get pid -5", getnice(-5), -1);
-  bad += case15_check("set pid -5", setnice(-5, 20), -1);
-  bad += case15_check("invalid pids preserve self", getnice(me), 20);
+  bad += check_value("-INT_MAX rejected", setnice(me, -2147483647), -1);
+  bad += check_value("-INT_MAX preserves nice", getnice(me), 20);
+  bad += check_value("same nice succeeds", setnice(me, 20), 0);
+  bad += check_value("same nice remains 20", getnice(me), 20);
+  bad += check_value("get pid 0", getnice(0), -1);
+  bad += check_value("set pid 0", setnice(0, 20), -1);
+  bad += check_value("get pid -5", getnice(-5), -1);
+  bad += check_value("set pid -5", setnice(-5, 20), -1);
+  bad += check_value("invalid pids preserve self", getnice(me), 20);
 
   int pid = fork();
   if(pid < 0)
     return bad + 1;
   if(pid == 0)
     exit(0);
-  bad += case15_reap(pid, 0);
-  bad += case15_check("get reaped pid", getnice(pid), -1);
-  bad += case15_check("set reaped pid", setnice(pid, 20), -1);
+  bad += reap_child(pid, 0);
+  bad += check_value("get reaped pid", getnice(pid), -1);
+  bad += check_value("set reaped pid", setnice(pid, 20), -1);
   printf("values: %s\n", bad ? "FAIL" : "PASS");
   return bad;
 }
 
 static int
-case15_test_inherit(void)
+test_fork_exec_nice(void)
 {
   int values[3] = {0, 40, 7};
   int me = getpid(), bad = 0;
@@ -919,7 +842,7 @@ case15_test_inherit(void)
       if(getnice(getpid()) != values[i])
         exit(1);
       if(i == 2){
-        char *args[] = {"test2", "--case15-exec7", 0};
+        char *args[] = {"test2", "--check-exec-nice", 0};
         exec("/test2", args);
         fprintf(2, "FAIL self exec\n");
         exit(1);
@@ -927,8 +850,8 @@ case15_test_inherit(void)
       exit(0);
     }
     // 부모가 wait에서 잠들면 nice가 40인 자식도 실행할 수 있다.
-    bad += case15_reap(pid, 0);
-    bad += case15_check("parent nice preserved", getnice(me), values[i]);
+    bad += reap_child(pid, 0);
+    bad += check_value("parent nice preserved", getnice(me), values[i]);
     printf("fork nice %d%s: checked child status\n", values[i],
            i == 2 ? " and exec" : "");
   }
@@ -937,7 +860,7 @@ case15_test_inherit(void)
 }
 
 static int
-case15_test_ps(void)
+test_ps_states(void)
 {
   int me = getpid(), bad = 0, pid;
 
@@ -955,16 +878,16 @@ case15_test_ps(void)
   // 자식은 종료 전에 사용자 수준에서 잠들지 않는다. 고정 틱 지연은 가정하지 않는다.
   if(setnice(me, 20) != 0){
     kill(pid);
-    case15_reap(pid, -1);
+    reap_child(pid, -1);
     return 1;
   }
-  bad += case15_check("zombie nice", getnice(pid), 12);
+  bad += check_value("zombie nice", getnice(pid), 12);
   printf("PS ZOMBIE BEGIN pid=%d: expect nice 12 zombie\n", pid);
   ps(pid);
   printf("PS ZOMBIE END\n");
-  bad += case15_reap(pid, 0);
-  bad += case15_check("get after wait", getnice(pid), -1);
-  bad += case15_check("set after wait", setnice(pid, 20), -1);
+  bad += reap_child(pid, 0);
+  bad += check_value("get after wait", getnice(pid), -1);
+  bad += check_value("set after wait", setnice(pid, 20), -1);
   printf("PS REAPED BEGIN: expect no rows\n");
   ps(pid);
   printf("PS REAPED END\n");
@@ -984,42 +907,26 @@ case15_test_ps(void)
   }
   if(setnice(pid, 30) != 0){
     kill(pid);
-    case15_reap(pid, -1);
+    reap_child(pid, -1);
     return bad + 1;
   }
-  bad += case15_check("runnable nice", getnice(pid), 30);
+  bad += check_value("runnable nice", getnice(pid), 30);
   // CPUS=1에서 실행 중인 nice가 0인 부모가 nice가 30인 자식을 RUNNABLE로 유지한다.
   printf("PS RUNNABLE BEGIN pid=%d: expect nice 30 runble\n", pid);
   ps(pid);
   printf("PS RUNNABLE END\n");
-  bad += case15_check("kill runnable child", kill(pid), 0);
-  bad += case15_reap(pid, -1);
+  bad += check_value("kill runnable child", kill(pid), 0);
+  bad += reap_child(pid, -1);
   printf("ps syscall checks: %s; inspect console rows separately\n",
          bad ? "FAIL" : "PASS");
+  printf("ps display checks require console review; CPUS=1 required\n");
   return bad;
 }
 
+// 기존 함수의 오류 경로에서 남긴 nice와 파일이 다음 검사에 영향을 주지 않도록 격리한다.
+// 각 시나리오는 자기 자식만 회수하며 상위 프로세스는 즉시 wait에서 잠든다.
 static int
-case15(void)
-{
-  int failed = 0;
-
-  failed += case15_test_values();
-  failed += case15_test_inherit();
-  failed += case15_test_ps();
-  if(failed){
-    fprintf(2, "test15 failed (%d)\n", failed);
-    exit(1);
-  }
-  printf("test15 automated checks passed\n");
-  printf("ps display checks require console review; CPUS=1 required\n");
-  exit(0);
-}
-
-// 각 실행은 별도 자식에서 수행한다. 부모의 nice와 열린 파일은 바뀌지 않는다.
-// 부모는 즉시 wait에서 잠들어 작업자와 CPU를 경쟁하지 않는다.
-static int
-run_case(int number)
+run_test(int (*test)(void), char *name)
 {
   int saved = getnice(getpid());
   int status = -1, pid;
@@ -1032,21 +939,11 @@ run_case(int number)
   if(pid == 0){
     if(setnice(getpid(), 0) < 0)
       exit(1);
-    switch(number){
-    case 0: existing_tests(); break;
-    case 10: case10(); break;
-    case 11: case11(); break;
-    case 12: case12(); break;
-    case 13: case13(); break;
-    case 14: case14(); break;
-    case 15: case15(); break;
-    }
-    exit(1);
+    exit(test());
   }
   int got = wait(&status);
   int bad = got != pid || status != 0 || getnice(getpid()) != saved;
-  printf("test2 case %d: %s (child status %d)\n",
-         number, bad ? "FAIL" : "PASS", status);
+  printf("%s: %s (child status %d)\n", name, bad ? "FAIL" : "PASS", status);
   return bad;
 }
 
@@ -1055,22 +952,26 @@ main(int argc, char **argv)
 {
   int failed = 0;
 
-  // 테스트 15가 exec한 자식만 이 내부 도우미를 사용한다. 공개 실행 옵션은 없다.
-  // 새 프로그램에서는 실행 위치를 기억할 수 없으므로 내부 인자로 도우미를 구분한다.
+  // exec로 다시 실행한 자식만 이 내부 인자로 구분한다. 공개 실행 옵션은 없다.
   // 상속받은 nice를 바꾸거나 전체 테스트를 재실행하기 전에 검사하고 종료한다.
-  if(argc == 2 && strcmp(argv[1], "--case15-exec7") == 0){
+  if(argc == 2 && strcmp(argv[1], "--check-exec-nice") == 0){
     int value = getnice(getpid());
     printf("exec helper nice: %d\n", value);
     exit(value != 7);
   }
 
-  failed += run_case(0);
-  failed += run_case(10);
-  failed += run_case(11);
-  failed += run_case(12);
-  failed += run_case(13);
-  failed += run_case(14);
-  failed += run_case(15);
+  failed += run_test(test_completion_order, "completion order");
+  failed += run_test(test_same_nice_interleave, "same nice interleave");
+  failed += run_test(test_lower_nice_switches_immediately, "lower nice switches immediately");
+  failed += run_test(test_nice_inherited_by_grandchild, "nice inherited by grandchild");
+  failed += run_test(test_zombie_nice, "zombie nice");
+  failed += run_test(test_failed_setnice, "failed setnice");
+  failed += run_test(test_three_worker_round_robin, "three worker round robin");
+  failed += run_test(test_priority_groups, "priority groups");
+  failed += run_test(test_sleep_priority, "sleep priority");
+  failed += run_test(test_nice_values, "nice values");
+  failed += run_test(test_fork_exec_nice, "fork and exec nice");
+  failed += run_test(test_ps_states, "ps states");
 
   if(failed){
     fprintf(2, "test2 tests failed (%d)\n", failed);
