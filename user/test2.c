@@ -1050,53 +1050,32 @@ run_case(int number)
   return bad;
 }
 
-static int
-case_number(char *arg)
-{
-  if(strcmp(arg, "existing") == 0)
-    return 0;
-  for(int n = 10; n <= 15; n++)
-    if(arg[0] == '1' && arg[1] == '0' + n - 10 && arg[2] == 0)
-      return n;
-  return -1;
-}
-
 int
 main(int argc, char **argv)
 {
   int failed = 0;
 
-  // exec에서 상속받은 nice를 변경하기 전에 내부 도우미를 가장 먼저 처리한다.
+  // 테스트 15가 exec한 자식만 이 내부 도우미를 사용한다. 공개 실행 옵션은 없다.
+  // 새 프로그램에서는 실행 위치를 기억할 수 없으므로 내부 인자로 도우미를 구분한다.
+  // 상속받은 nice를 바꾸거나 전체 테스트를 재실행하기 전에 검사하고 종료한다.
   if(argc == 2 && strcmp(argv[1], "--case15-exec7") == 0){
     int value = getnice(getpid());
     printf("exec helper nice: %d\n", value);
     exit(value != 7);
   }
-  // 인자가 없으면 기존 네 테스트와 출력 및 실행 순서를 그대로 유지한다.
-  if(argc == 1)
-    return existing_tests();
 
-  // 실행 전에 모든 인자를 검사하여 잘못된 선택으로 일부만 실행되는 일을 막는다.
-  for(int i = 1; i < argc; i++){
-    if(strcmp(argv[i], "all") != 0 && case_number(argv[i]) < 0){
-      fprintf(2, "usage: test2 [existing|all|10|11|12|13|14|15] ...\n");
-      exit(1);
-    }
-  }
-  // 번호와 all을 반복할 수 있어 같은 프로세스에서 정리 상태를 다시 검사할 수 있다.
-  for(int i = 1; i < argc; i++){
-    if(strcmp(argv[i], "all") == 0){
-      failed += run_case(0);
-      for(int n = 10; n <= 15; n++)
-        failed += run_case(n);
-    } else {
-      failed += run_case(case_number(argv[i]));
-    }
-  }
+  failed += run_case(0);
+  failed += run_case(10);
+  failed += run_case(11);
+  failed += run_case(12);
+  failed += run_case(13);
+  failed += run_case(14);
+  failed += run_case(15);
+
   if(failed){
-    fprintf(2, "test2 selected tests failed (%d)\n", failed);
+    fprintf(2, "test2 tests failed (%d)\n", failed);
     exit(1);
   }
-  printf("test2 selected tests passed\n");
+  printf("test2 tests passed\n");
   exit(0);
 }
