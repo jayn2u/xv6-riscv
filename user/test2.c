@@ -190,6 +190,57 @@ test_lower_nice_switches_immediately(void)
   return bad || strcmp(order, "PCQ") != 0;
 }
 
+static int
+test_nice_inherited_by_grandchild(void)
+{
+  int result[2];
+  int pid, v = -1, bad = 0;
+
+  if(pipe(result) < 0)
+    return 1;
+  if(setnice(getpid(), 12) < 0)
+    return 1;
+
+  pid = fork();
+  if(pid < 0)
+    return 1;
+  if(pid == 0){
+    int gpid;
+    close(result[0]);
+
+    if(getnice(getpid()) != 12 || setnice(getpid(), 4) < 0)
+      exit(1);
+
+    gpid = fork();
+    if(gpid < 0)
+      exit(1);
+    if(gpid == 0){
+      int n = getnice(getpid());
+      if(write(result[1], &n, sizeof(n)) != sizeof(n))
+        exit(1);
+      exit(0);
+    }
+    close(result[1]);
+    if(wait(0) < 0)
+      exit(1);
+    exit(0);
+  }
+
+  close(result[1]);
+  if(read(result[0], &v, sizeof(v)) != sizeof(v))
+    bad = 1;
+  close(result[0]);
+  if(wait(0) < 0)
+    bad = 1;
+
+  if(getnice(getpid()) != 12)
+    bad = 1;
+  setnice(getpid(), 0);
+
+  printf("grandchild nice: %d\n", v);
+  return bad || v != 4;
+}
+
 int
 main(void)
 {
@@ -201,6 +252,7 @@ main(void)
   failed += test_completion_order();
   failed += test_same_nice_interleave();
   failed += test_lower_nice_switches_immediately();
+  failed += test_nice_inherited_by_grandchild();
 
   if(failed){
     fprintf(2, "scheduler test failed (%d)\n", failed);
