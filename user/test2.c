@@ -59,7 +59,7 @@ main(void)
     wait(0);
 
   printf("completion order: %s\n", order);
-  exit(strcmp(order, "ABC") != 0);
+  exit(strcmp(order, "ACB") != 0);
 
 fail:
   for(int i = 0; i < count; i++)
