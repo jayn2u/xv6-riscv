@@ -1,6 +1,7 @@
 #include "kernel/types.h"
 #include "user/user.h"
 
+// 서로 다른 nice의 실행 테스트 코드
 static int
 test_completion_order(void)
 {
@@ -67,6 +68,7 @@ fail:
   return 1;
 }
 
+// 동일한 nice 값의 실행 테스트 코드
 static int
 test_same_nice_interleave(void)
 {
@@ -150,6 +152,7 @@ fail:
   return 1;
 }
 
+// nice를 낮춘 자식으로의 즉시 전환
 static int
 test_lower_nice_switches_immediately(void)
 {
@@ -190,6 +193,7 @@ test_lower_nice_switches_immediately(void)
   return bad || strcmp(order, "PCQ") != 0;
 }
 
+// 손자 프로세스의 nice 상속
 static int
 test_nice_inherited_by_grandchild(void)
 {
@@ -258,9 +262,6 @@ test_zombie_nice(void)
     exit(0);
   }
 
-  // kwait는 ZOMBIE 자식을 찾은 뒤에만 종료 상태를 복사한다.
-  // 잘못된 주소로 copyout을 실패시켜 freeproc 전에 반환하므로 유일한 자식은 회수되지 않는다.
-  // 파이프 데이터나 EOF만으로는 종료 완료를 확인할 수 없다.
   if(wait((int *)-1) != -1){
     fprintf(2, "zombie nice: invalid-status wait unexpectedly succeeded\n");
     return 1;
@@ -318,11 +319,9 @@ test_failed_setnice(void)
 
   close(gate[0]);
   gate[0] = -1;
-  // 성공한 호출은 우선순위가 높은 자식에게 CPU를 양보하고 자식은 게이트에서 잠든다.
   if(setnice(pid, 5) != 0 || getnice(pid) != 5)
     goto fail;
 
-  // 잘못된 호출 전에 게이트를 해제한다. 타이머 선점으로 언제든 C가 기록될 수 있다.
   if(write(gate[1], "x", 1) != 1)
     goto fail;
   rejected = setnice(me, 45);
@@ -340,7 +339,6 @@ test_failed_setnice(void)
   gate[1] = -1;
   close(result[1]);
   result[1] = -1;
-  // 파이프는 일부만 읽힐 수 있으므로 표식을 하나씩 읽고 마지막에 EOF를 확인한다.
   for(int i = 0; i < 3; i++)
     if(read(result[0], &order[i], 1) != 1)
       goto fail;
@@ -357,12 +355,8 @@ test_failed_setnice(void)
 
   printf("setnice(45): %d, nice after failure: %d\n", rejected, unchanged);
   printf("marker order: %s (PCQ or CPQ allowed on one CPU)\n", order);
-  // C는 Q보다 먼저 기록되어야 한다. C와 P의 순서는 관찰 정보다.
   if(strcmp(order, "PCQ") != 0 && strcmp(order, "CPQ") != 0)
     bad = 1;
-  // PCQ가 나와도 어떤 커널 경로가 실행되었는지는 알 수 없다.
-  // 잘못된 호출 이전을 포함해 타이머 선점이 발생하면 CPQ가 나올 수 있다.
-  // 이 표식은 개별 사건의 기록이며 전체 스케줄러 실행 기록은 아니다.
   printf("No voluntary yield on failure: unproven without instrumentation.\n");
   return bad;
 
@@ -389,7 +383,6 @@ test_three_worker_round_robin(void)
   int counts[3] = {0, 0, 0}, changes = 0, matches = 0;
   char order[19] = {0}, extra;
 
-  // 시작 신호가 모두 준비될 때까지 부모의 우선순위를 작업자보다 높게 유지한다(CPUS=1).
   if(setnice(getpid(), 0) < 0)
     goto fail;
   if(pipe(gate) < 0 || pipe(result) < 0)
@@ -413,7 +406,6 @@ test_three_worker_round_robin(void)
       tick = uptime();
       for(int j = 0; j < 6; j++){
         uint now;
-        // CPU를 계속 사용한다. pause()를 쓰면 잠드는 작업자를 검사하게 된다.
         do {
           now = uptime();
         } while(now == tick);
@@ -438,8 +430,6 @@ test_three_worker_round_robin(void)
   close(gate[1]);
   gate[1] = -1;
 
-  // 시작 신호가 모두 파이프에 있다. 부모는 nice가 10인 작업자를 선점할 수 없다.
-  // 기록은 총 18바이트이므로 아직 결과 파이프를 읽지 않아도 공간이 충분하다.
   if(setnice(getpid(), 40) < 0)
     goto fail;
   for(int i = 0; i < 18; i++){
@@ -478,8 +468,6 @@ test_three_worker_round_robin(void)
   printf("counts: A=%d B=%d C=%d, changes: %d\n",
          counts[0], counts[1], counts[2], changes);
   printf("three-place matches: %d/15 (cyclic-progress diagnostic)\n", matches);
-  // 선점으로 틱 표식의 기록이 늦어질 수 있다. 처음 세 표식이 ABC이거나
-  // 전체 표식이 완벽한 반복 순서를 이루는 것은 보장하지 않는다.
   printf("markers are observations, not a full context-switch trace\n");
   return counts[0] != 6 || counts[1] != 6 || counts[2] != 6 || changes < 3;
 
@@ -509,7 +497,6 @@ test_priority_groups(void)
   int bad = 0;
   char order[21] = {0}, extra;
 
-  // 준비 중에는 작업자보다 높은 우선순위를 유지하고 이후 wait()에서 잠든다.
   if(setnice(getpid(), 0) < 0 ||
      pipe(gate) < 0 || pipe(result) < 0)
     goto fail;
@@ -528,8 +515,6 @@ test_priority_groups(void)
       if(getnice(getpid()) != values[i])
         exit(1);
 
-      // CPU를 계속 사용하여 RUNNABLE 상태를 유지한다. pause나 콘솔 출력은 하지 않는다.
-      // 표식은 틱 변화 이후의 진행을 관찰하며 개별 디스패치를 나타내지 않는다.
       for(int j = 0; j < 5; j++){
         uint start = uptime();
         while((uint)uptime() - start < 1)
@@ -554,8 +539,6 @@ test_priority_groups(void)
   close(gate[1]);
   gate[1] = -1;
 
-  // 20바이트 모두 512바이트 파이프에 들어간다. wait 이후 읽어서
-  // 매 표식마다 nice가 0인 부모를 깨워 동일 우선순위 순서를 방해하지 않는다.
   for(int i = 0; i < count; i++){
     int status, found = 0;
     int pid = wait(&status);
@@ -595,8 +578,6 @@ test_priority_groups(void)
   printf("priority groups progress markers: %s\n", order);
   printf("group precedence and five markers each: %s\n", bad ? "FAIL" : "PASS");
   printf("within-group marker changes: %d, %d\n", changes[0], changes[1]);
-  // 변화가 두 번 이상이면 두 작업자가 각각 연속으로 끝난 경우는 배제된다. 정확한 교대는
-  // 보장되지 않는다. uptime과 write 사이에 타이머 선점이 발생할 수 있다.
   if(changes[0] < 2 || changes[1] < 2){
     printf("sampled interleaving: insufficient evidence\n");
     bad = 1;
@@ -671,7 +652,6 @@ test_sleep_priority(void)
       } else {
         for(int j = 0; j < LOW_PRIORITY_MARKERS; j++){
           uint tick = uptime();
-          // 자발적으로 잠들지 않고 표식마다 최소 한 틱 동안 CPU 작업을 한다.
           do {
             for(volatile int n = 0; n < 10000; n++)
               ;
@@ -692,13 +672,11 @@ test_sleep_priority(void)
   gate[0] = -1;
   close(result[1]);
   result[1] = -1;
-  // CPUS=1에서 H는 L보다 우선순위가 높으므로 L 실행 전에 pause에 들어간다.
   if(write(gate[1], "xx", 2) != 2)
     goto fail;
   close(gate[1]);
   gate[1] = -1;
 
-  // 32개 기록이 모두 512바이트 파이프에 들어간다. 수집 중에는 CPU를 경쟁하지 않는다.
   for(int i = 0; i < 2; i++){
     int status, pid = wait(&status);
     int found = 0;
@@ -753,7 +731,6 @@ test_sleep_priority(void)
   printf("H elapsed ticks: %d; L markers before H: %d of %d\n",
          elapsed, before, low);
   printf("markers show progress, not a complete scheduler trace\n");
-  // H의 고정 표식 위치나 비동기 깨우기에 의한 즉시 선점을 주장하지 않는다.
   return !started || high != 1 || low != LOW_PRIORITY_MARKERS || elapsed < 3 ||
          before <= 0 || before >= LOW_PRIORITY_MARKERS;
 
@@ -803,7 +780,6 @@ test_nice_values(void)
     return 1;
   bad += check_value("INT_MAX rejected", setnice(me, 2147483647), -1);
   bad += check_value("INT_MAX preserves nice", getnice(me), 20);
-  // -INT_MAX는 INT_MIN이 아니다.
   bad += check_value("-INT_MAX rejected", setnice(me, -2147483647), -1);
   bad += check_value("-INT_MAX preserves nice", getnice(me), 20);
   bad += check_value("same nice succeeds", setnice(me, 20), 0);
@@ -849,7 +825,6 @@ test_fork_exec_nice(void)
       }
       exit(0);
     }
-    // 부모가 wait에서 잠들면 nice가 40인 자식도 실행할 수 있다.
     bad += reap_child(pid, 0);
     bad += check_value("parent nice preserved", getnice(me), values[i]);
     printf("fork nice %d%s: checked child status\n", values[i],
@@ -874,8 +849,6 @@ test_ps_states(void)
       exit(1);
     exit(0);
   }
-  // CPUS=1에서 양보하면 자식의 nice는 0에서 12가 되어 부모의 20보다 우선한다.
-  // 자식은 종료 전에 사용자 수준에서 잠들지 않는다. 고정 틱 지연은 가정하지 않는다.
   if(setnice(me, 20) != 0){
     kill(pid);
     reap_child(pid, -1);
@@ -901,7 +874,6 @@ test_ps_states(void)
   if(pid < 0)
     return bad + 1;
   if(pid == 0){
-    // 죽일 때까지 RUNNABLE 상태를 유지한다. 완료 시간은 단정하지 않는다.
     for(;;)
       ;
   }
@@ -911,7 +883,6 @@ test_ps_states(void)
     return bad + 1;
   }
   bad += check_value("runnable nice", getnice(pid), 30);
-  // CPUS=1에서 실행 중인 nice가 0인 부모가 nice가 30인 자식을 RUNNABLE로 유지한다.
   printf("PS RUNNABLE BEGIN pid=%d: expect nice 30 runble\n", pid);
   ps(pid);
   printf("PS RUNNABLE END\n");
@@ -923,8 +894,7 @@ test_ps_states(void)
   return bad;
 }
 
-// 기존 함수의 오류 경로에서 남긴 nice와 파일이 다음 검사에 영향을 주지 않도록 격리한다.
-// 각 시나리오는 자기 자식만 회수하며 상위 프로세스는 즉시 wait에서 잠든다.
+// 시나리오별 자식 프로세스 격리 실행
 static int
 run_test(int (*test)(void), char *name)
 {
@@ -947,13 +917,12 @@ run_test(int (*test)(void), char *name)
   return bad;
 }
 
+// 전체 테스트 실행
 int
 main(int argc, char **argv)
 {
   int failed = 0;
 
-  // exec로 다시 실행한 자식만 이 내부 인자로 구분한다. 공개 실행 옵션은 없다.
-  // 상속받은 nice를 바꾸거나 전체 테스트를 재실행하기 전에 검사하고 종료한다.
   if(argc == 2 && strcmp(argv[1], "--check-exec-nice") == 0){
     int value = getnice(getpid());
     printf("exec helper nice: %d\n", value);
