@@ -160,6 +160,7 @@ UPROGS=\
 	$U/_dorphan\
 	$U/_nice\
 	$U/_ps\
+	$U/_test2\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
