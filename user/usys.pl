@@ -42,6 +42,3 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
-entry("getnice");
-entry("setnice");
-entry("ps");

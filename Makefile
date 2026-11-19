@@ -1,7 +1,7 @@
 #-----------------------------------------------------
 
-STUDENT_ID = 20211830
-ASSIGNMENT_NO = 3
+STUDENT_ID = 
+ASSIGNMENT_NO = 
 
 ifndef STUDENT_ID
 $(error Please set STUDENT_ID in Makefile)
@@ -158,9 +158,6 @@ UPROGS=\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\
-	$U/_nice\
-	$U/_ps\
-	$U/_schedtest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -182,7 +179,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
-CPUS := 1
+CPUS := 3
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

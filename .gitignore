@@ -16,5 +16,3 @@ kernel/kernel
 user/usys.S
 .gdbinit
 TAGS
-
-*.tar.gz

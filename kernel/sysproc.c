@@ -107,38 +107,3 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
-
-uint64
-sys_getnice(void)
-{
-  int pid;
-
-  argint(0, &pid);
-  return kgetnice(pid);
-}
-
-uint64
-sys_setnice(void)
-{
-  int pid;
-  int value;
-
-  argint(0, &pid);
-  argint(1, &value);
-
-  if(ksetnice(pid, value) == 0){
-    yield();
-    return 0;
-  }
-  return -1;
-}
-
-uint64
-sys_ps(void)
-{
-  int pid;
-
-  argint(0, &pid);
-  kps(pid);
-  return 0; 
-}

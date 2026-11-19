@@ -124,7 +124,6 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  p->nice = 20;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -300,7 +299,6 @@ kfork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
-  np->nice = p->nice;
   np->state = RUNNABLE;
   release(&np->lock);
 
@@ -428,7 +426,6 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  int last = NPROC - 1;  // index of the process that ran last
 
   c->proc = 0;
   for(;;){
@@ -440,46 +437,28 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    // 1) Scan circularly from last+1 and remember the RUNNABLE process
-    //    with the lowest nice. The strict "<" keeps the first one found
-    //    among equals, i.e. the one after last: this gives round-robin.
-    int best = -1;
-    int best_nice = 41;  // larger than the valid range [0, 40]
-    for(int i = 1; i <= NPROC; i++){
-      int idx = (last + i) % NPROC;
-      p = &proc[idx];
+    int found = 0;
+    for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE && p->nice < best_nice){
-        best = idx;
-        best_nice = p->nice;
+      if(p->state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+        found = 1;
       }
       release(&p->lock);
     }
-
-    // 2) nothing to run; stop running on this core until an interrupt.
-    if(best < 0){
+    if(found == 0) {
+      // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
-      continue;
     }
-
-    // 3) Re-take the lock and re-check: the state may have changed
-    //    since the scan released it.
-    p = &proc[best];
-    acquire(&p->lock);
-    if(p->state == RUNNABLE){
-      // Switch to chosen process.  It is the process's job
-      // to release its lock and then reacquire it
-      // before jumping back to us.
-      p->state = RUNNING;
-      c->proc = p;
-      last = best;
-      swtch(&c->context, &p->context);
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&p->lock);
   }
 }
 
@@ -707,73 +686,5 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
-  }
-}
-
-int
-kgetnice(int pid)
-{
-  if(pid <= 0) return -1;
-
-  struct proc *p;
-  int nice;
-
-  for(p = proc; p < &proc[NPROC]; p++){
-    acquire(&p->lock);
-    if(p->pid == pid){
-      nice = p->nice;
-      release(&p->lock);
-      return nice;
-    }
-    release(&p->lock);
-  }
-  return -1;
-}
-
-int
-ksetnice(int pid, int value)
-{
-  struct proc *p;
-
-  if(value > 40 || value < 0 || pid <= 0) return -1;
-
-  for(p = proc; p < &proc[NPROC]; p++){
-    acquire(&p->lock);
-    if(p->pid == pid){
-      p->nice = value;
-      release(&p->lock);
-      return 0;
-    }
-    release(&p->lock);
-  }
-
-  return -1;
-}
-
-void
-kps(int pid)
-{ 
-  static char *states[] = {
-  [UNUSED]    "unused",
-  [USED]      "used",
-  [SLEEPING]  "sleep ",
-  [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
-  [ZOMBIE]    "zombie"
-  };
-  struct proc *p;
-  char *state;
-
-  for(p = proc; p < &proc[NPROC]; p++){
-    if(p->state == UNUSED)
-      continue;
-    if(pid != 0 && p->pid != pid)
-      continue;
-    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-      state = states[p->state];
-    else
-      state = "???";
-
-    printf("%d %d %s %s\n", p->pid, p->nice, state, p->name);
   }
 }
