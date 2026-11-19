@@ -6,6 +6,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "vm.h"
+#include "mman.h"
 
 uint64
 sys_exit(void)
@@ -117,8 +118,52 @@ sys_mmap(void)
   argaddr(0, &addr);
   argint(1, &prot);
   
-  printf("kernel: addr=%p prot=%d\n", (void*)addr, prot);
+  if (addr % PGSIZE != 0) return -1;
 
+  struct proc *p = myproc();
+
+  if (addr >= MAXVA) return -1;
+
+  int perm = PTE_U;
+
+  if (prot & PROT_READ)
+    perm = perm | PTE_R;
+  
+  if (prot & PROT_WRITE)
+    perm = perm | PTE_W;
+
+  if (prot & PROT_EXEC)
+    perm = perm | PTE_X;
+
+  pte_t* pte = walk(p->pagetable, addr, 0);
+
+  if (pte != 0 && (*pte & PTE_V))
+    return -1;
+
+  int i;
+  for (i = 0; i < MAX_MMAP; i++) {
+    if (p->mmap_used[i] == 0)
+      break;
+  }
+  
+  if (i == MAX_MMAP) {
+    return -1;
+  }
+  
+  char* mem;
+
+  mem = kalloc();
+  if (mem == 0)
+    return -1;
+  memset(mem, 0, PGSIZE);
+  if(mappages(p->pagetable, addr, PGSIZE, (uint64)mem, perm) != 0) {
+    kfree(mem);
+    return -1;
+  }
+
+  p->mmapped[i] = addr;
+  p->mmap_used[i] = 1;
+  
   return 0;
 }
 

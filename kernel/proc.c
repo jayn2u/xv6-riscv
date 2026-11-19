@@ -122,6 +122,8 @@ allocproc(void)
   return 0;
 
 found:
+  memset(&p->mmapped, 0, sizeof(p->mmapped));
+  memset(&p->mmap_used, 0, sizeof(p->mmap_used));
   p->pid = allocpid();
   p->state = USED;
 
