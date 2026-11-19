@@ -160,8 +160,15 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable) {
+    for (int i = 0; i < MAX_MMAP; i++) {
+      if (p->mmap_used[i] != 0 && p->mmapped[i]) {
+        uvmunmap(p->pagetable, p->mmapped[i], 1, 1);
+        p->mmap_used[i] = 0;
+      }
+    }
     proc_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
