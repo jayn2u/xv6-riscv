@@ -107,3 +107,32 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int prot;
+
+  argaddr(0, &addr);
+  argint(1, &prot);
+  
+  printf("kernel: addr=%p prot=%d\n", (void*)addr, prot);
+
+  return 0;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+
+  argaddr(0, &addr);
+  return 0;
+}
+
+uint64
+sys_printpagetbl(void)
+{
+  return 0;
+}

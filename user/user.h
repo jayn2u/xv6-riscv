@@ -24,6 +24,9 @@ int getpid(void);
 char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
+int mmap(void* addr, int prot);
+int munmap(void* addr);
+void printpagetbl(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
