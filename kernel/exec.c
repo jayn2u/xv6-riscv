@@ -126,6 +126,13 @@ kexec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  for (int i = 0; i < MAX_MMAP; i++) {
+    if (p->mmap_used[i] != 0 && p->mmapped[i]) {
+      uvmunmap(p->pagetable, p->mmapped[i], 1, 1);
+      p->mmap_used[i] = 0;
+    }
+  }
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
