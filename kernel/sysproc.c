@@ -171,9 +171,18 @@ uint64
 sys_munmap(void)
 {
   uint64 addr;
+  struct proc *p = myproc();
 
   argaddr(0, &addr);
-  return 0;
+
+  for(int i = 0; i < MAX_MMAP; i++) {
+    if (p->mmap_used[i] != 0 && p->mmapped[i] == addr) {
+      uvmunmap(p->pagetable, addr, 1, 1);
+      p->mmap_used[i] = 0;
+      return 0;
+    }
+  }
+  return -1;
 }
 
 uint64
