@@ -506,3 +506,27 @@ int ismapped(pagetable_t pagetable, uint64 va)
   }
   return 0;
 }
+
+void printpagetbl_walk(pagetable_t pagetable, int level, uint64 va)
+{
+  for (int i = 0; i < 512; i++)
+  {
+    pte_t pte = pagetable[i];
+    uint64 cur = va | ((uint64)i << PXSHIFT(level));
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+    {
+      uint64 child = PTE2PA(pte);
+      printpagetbl_walk((pagetable_t)child, i - 1, cur);
+    }
+    else if (pte & PTE_V)
+    {
+      uint64 pa = PTE2PA(pte);
+      char mode = (pte & PTE_U) ? 'U' : 'S';
+      char r = (pte & PTE_R) ? 'r' : '-';
+      char w = (pte & PTE_W) ? 'w' : '-';
+      char x = (pte & PTE_X) ? 'x' : '-';
+
+      printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", va, pa, mode, r, w, x);
+    }
+  }
+}
