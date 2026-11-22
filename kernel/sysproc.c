@@ -117,7 +117,7 @@ sys_mmap(void)
 
   argaddr(0, &addr);
   argint(1, &prot);
-  
+
   if (addr % PGSIZE != 0) return -1;
 
   struct proc *p = myproc();
@@ -128,7 +128,7 @@ sys_mmap(void)
 
   if (prot & PROT_READ)
     perm = perm | PTE_R;
-  
+
   if (prot & PROT_WRITE)
     perm = perm | PTE_W;
 
@@ -145,11 +145,11 @@ sys_mmap(void)
     if (p->mmap_used[i] == 0)
       break;
   }
-  
+
   if (i == MAX_MMAP) {
     return -1;
   }
-  
+
   char* mem;
 
   mem = kalloc();
@@ -163,7 +163,7 @@ sys_mmap(void)
 
   p->mmapped[i] = addr;
   p->mmap_used[i] = 1;
-  
+
   return 0;
 }
 
@@ -188,5 +188,37 @@ sys_munmap(void)
 uint64
 sys_printpagetbl(void)
 {
+  pagetable_t pagetable = myproc()->pagetable;
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if (pte & PTE_V) {
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+        pagetable_t child = (pagetable_t)PTE2PA(pte);
+        for (int j = 0; j < 512; j++) {
+          pte_t child_pte = child[j];
+          if (child_pte & PTE_V) {
+            if ((child_pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+              pagetable_t leaf = (pagetable_t)PTE2PA(child_pte);
+              for (int k = 0; k < 512; k++) {
+                pte_t leaf_pte = leaf[k];
+                if (leaf_pte & PTE_V) {
+            if ((leaf_pte& (PTE_R | PTE_W | PTE_X)) != 0) {
+              uint64 va = ((uint64)i << 30) | ((uint64)j << 21) | ((uint64)k << 12);
+              uint64 pa = PTE2PA(leaf_pte);
+              char mode = (leaf_pte & PTE_U) ? 'U' : 'S';
+              char r = (leaf_pte & PTE_R) ? 'r' : '-';
+              char w = (leaf_pte & PTE_W) ? 'w' : '-';
+              char x = (leaf_pte & PTE_X) ? 'x' : '-';
+
+              printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", va, pa, mode, r, w, x);
+            }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   return 0;
 }

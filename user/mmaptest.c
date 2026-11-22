@@ -20,5 +20,7 @@ main(int argc, char* argv[])
     ret = munmap((void*)0x40000000);
     printf("munmap again: %d\n", ret);          // expect -1
 
+    printpagetbl();
+
     exit(0);
 }
