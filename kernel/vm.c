@@ -516,7 +516,7 @@ void printpagetbl_walk(pagetable_t pagetable, int level, uint64 va)
     if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
     {
       uint64 child = PTE2PA(pte);
-      printpagetbl_walk((pagetable_t)child, i - 1, cur);
+      printpagetbl_walk((pagetable_t)child, level - 1, cur);
     }
     else if (pte & PTE_V)
     {
@@ -526,7 +526,7 @@ void printpagetbl_walk(pagetable_t pagetable, int level, uint64 va)
       char w = (pte & PTE_W) ? 'w' : '-';
       char x = (pte & PTE_X) ? 'x' : '-';
 
-      printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", va, pa, mode, r, w, x);
+      printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", cur, pa, mode, r, w, x);
     }
   }
 }
