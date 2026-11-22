@@ -14,7 +14,7 @@ sys_exit(void)
   int n;
   argint(0, &n);
   kexit(n);
-  return 0;  // not reached
+  return 0; // not reached
 }
 
 uint64
@@ -48,17 +48,21 @@ sys_sbrk(void)
   argint(1, &t);
   addr = myproc()->sz;
 
-  if(t == SBRK_EAGER || n < 0) {
-    if(growproc(n) < 0) {
+  if (t == SBRK_EAGER || n < 0)
+  {
+    if (growproc(n) < 0)
+    {
       return -1;
     }
-  } else {
+  }
+  else
+  {
     // Lazily allocate memory for this process: increase its memory
     // size but don't allocate memory. If the processes uses the
     // memory, vmfault() will allocate it.
-    if(addr + n < addr)
+    if (addr + n < addr)
       return -1;
-    if(addr + n > TRAPFRAME)
+    if (addr + n > TRAPFRAME)
       return -1;
     myproc()->sz += n;
   }
@@ -72,12 +76,14 @@ sys_pause(void)
   uint ticks0;
 
   argint(0, &n);
-  if(n < 0)
+  if (n < 0)
     n = 0;
   acquire(&tickslock);
   ticks0 = ticks;
-  while(ticks - ticks0 < n){
-    if(killed(myproc())){
+  while (ticks - ticks0 < n)
+  {
+    if (killed(myproc()))
+    {
       release(&tickslock);
       return -1;
     }
@@ -118,11 +124,13 @@ sys_mmap(void)
   argaddr(0, &addr);
   argint(1, &prot);
 
-  if (addr % PGSIZE != 0) return -1;
+  if (addr % PGSIZE != 0)
+    return -1;
 
   struct proc *p = myproc();
 
-  if (addr >= MAXVA) return -1;
+  if (addr >= MAXVA)
+    return -1;
 
   int perm = PTE_U;
 
@@ -135,28 +143,31 @@ sys_mmap(void)
   if (prot & PROT_EXEC)
     perm = perm | PTE_X;
 
-  pte_t* pte = walk(p->pagetable, addr, 0);
+  pte_t *pte = walk(p->pagetable, addr, 0);
 
   if (pte != 0 && (*pte & PTE_V))
     return -1;
 
   int i;
-  for (i = 0; i < MAX_MMAP; i++) {
+  for (i = 0; i < MAX_MMAP; i++)
+  {
     if (p->mmap_used[i] == 0)
       break;
   }
 
-  if (i == MAX_MMAP) {
+  if (i == MAX_MMAP)
+  {
     return -1;
   }
 
-  char* mem;
+  char *mem;
 
   mem = kalloc();
   if (mem == 0)
     return -1;
   memset(mem, 0, PGSIZE);
-  if(mappages(p->pagetable, addr, PGSIZE, (uint64)mem, perm) != 0) {
+  if (mappages(p->pagetable, addr, PGSIZE, (uint64)mem, perm) != 0)
+  {
     kfree(mem);
     return -1;
   }
@@ -175,8 +186,10 @@ sys_munmap(void)
 
   argaddr(0, &addr);
 
-  for(int i = 0; i < MAX_MMAP; i++) {
-    if (p->mmap_used[i] != 0 && p->mmapped[i] == addr) {
+  for (int i = 0; i < MAX_MMAP; i++)
+  {
+    if (p->mmap_used[i] != 0 && p->mmapped[i] == addr)
+    {
       uvmunmap(p->pagetable, addr, 1, 1);
       p->mmap_used[i] = 0;
       return 0;
@@ -189,29 +202,38 @@ uint64
 sys_printpagetbl(void)
 {
   pagetable_t pagetable = myproc()->pagetable;
-  for (int i = 0; i < 512; i++) {
+  for (int i = 0; i < 512; i++)
+  {
     pte_t pte = pagetable[i];
-    if (pte & PTE_V) {
-      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+    if (pte & PTE_V)
+    {
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      {
         pagetable_t child = (pagetable_t)PTE2PA(pte);
-        for (int j = 0; j < 512; j++) {
+        for (int j = 0; j < 512; j++)
+        {
           pte_t child_pte = child[j];
-          if (child_pte & PTE_V) {
-            if ((child_pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+          if (child_pte & PTE_V)
+          {
+            if ((child_pte & (PTE_R | PTE_W | PTE_X)) == 0)
+            {
               pagetable_t leaf = (pagetable_t)PTE2PA(child_pte);
-              for (int k = 0; k < 512; k++) {
+              for (int k = 0; k < 512; k++)
+              {
                 pte_t leaf_pte = leaf[k];
-                if (leaf_pte & PTE_V) {
-            if ((leaf_pte& (PTE_R | PTE_W | PTE_X)) != 0) {
-              uint64 va = ((uint64)i << 30) | ((uint64)j << 21) | ((uint64)k << 12);
-              uint64 pa = PTE2PA(leaf_pte);
-              char mode = (leaf_pte & PTE_U) ? 'U' : 'S';
-              char r = (leaf_pte & PTE_R) ? 'r' : '-';
-              char w = (leaf_pte & PTE_W) ? 'w' : '-';
-              char x = (leaf_pte & PTE_X) ? 'x' : '-';
+                if (leaf_pte & PTE_V)
+                {
+                  if ((leaf_pte & (PTE_R | PTE_W | PTE_X)) != 0)
+                  {
+                    uint64 va = ((uint64)i << 30) | ((uint64)j << 21) | ((uint64)k << 12);
+                    uint64 pa = PTE2PA(leaf_pte);
+                    char mode = (leaf_pte & PTE_U) ? 'U' : 'S';
+                    char r = (leaf_pte & PTE_R) ? 'r' : '-';
+                    char w = (leaf_pte & PTE_W) ? 'w' : '-';
+                    char x = (leaf_pte & PTE_X) ? 'x' : '-';
 
-              printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", va, pa, mode, r, w, x);
-            }
+                    printf("0x%lx -> 0x%lx, mode=%c, perms=%c%c%c\n", va, pa, mode, r, w, x);
+                  }
                 }
               }
             }
