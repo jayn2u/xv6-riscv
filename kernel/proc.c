@@ -285,6 +285,35 @@ kfork(void)
   }
   np->sz = p->sz;
 
+  for (int i = 0; i < MAX_MMAP; i++) {
+    if (p->mmap_used[i] == 0) continue;
+
+    uint64 va = p->mmapped[i];
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+      freeproc(np);
+      release(&np->lock);
+      return -1;
+
+    }
+    uint64 pa = PTE2PA(*pte);
+    char* mem = kalloc();
+    if (mem == 0) {
+      freeproc(np);
+      release(&np->lock);
+      return -1;
+    }
+    memmove(mem, (void*)pa, PGSIZE);
+    uint64 flags = PTE_FLAGS(*pte);
+    if (mappages(np->pagetable, va, PGSIZE, (uint64)mem, flags) < 0) {
+      kfree(mem);
+      freeproc(np);
+      release(&np->lock);
+      return -1;
+    }
+    np->mmapped[i] = va;
+    np->mmap_used[i] = 1;
+  }
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
