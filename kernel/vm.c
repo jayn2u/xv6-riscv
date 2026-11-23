@@ -538,7 +538,7 @@ void printpagetbl_walk(pagetable_t pagetable, int level, uint64 va)
   {
     pte_t pte = pagetable[i];
     uint64 cur = va | ((uint64)i << PXSHIFT(level));
-    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+    if (level > 0 && (pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
     {
       uint64 child = PTE2PA(pte);
       printpagetbl_walk((pagetable_t)child, level - 1, cur);
