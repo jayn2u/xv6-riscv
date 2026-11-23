@@ -5,11 +5,9 @@
 
 static volatile char cowbuf[4096] __attribute__((aligned(4096)));
 
-int main(int argc, char *argv[])
+static void test_mmap(void)
 {
     int ret;
-
-    cowbuf[0] = 'A';
 
     ret = mmap((void *)0x40000000, PROT_READ | PROT_WRITE);
     printf("mmap returned %d\n", ret); // expect 0
@@ -23,7 +21,11 @@ int main(int argc, char *argv[])
     ret = munmap((void *)0x40000000);
     printf("munmap again: %d\n", ret); // expect -1
 
-    printpagetbl();
+}
+
+static void test_cow(void)
+{
+    cowbuf[0] = 'A';
 
     printf("Before fork: buffer = %c\n", cowbuf[0]);
     printf("Find the mapping for cowbuf VA = %p in each snapshot\n",
@@ -68,5 +70,27 @@ int main(int argc, char *argv[])
     }
 
     printf("COW isolation test PASSED\n");
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(2, "Usage: mmaptest 1|2|3\n1: mmap/munmap\n2: printpagetbl\n3: COW\n");
+        exit(1);
+    }
+
+    if (strcmp(argv[1], "1") == 0)
+        test_mmap();
+    else if (strcmp(argv[1], "2") == 0)
+        printpagetbl();
+    else if (strcmp(argv[1], "3") == 0)
+        test_cow();
+    else
+    {
+        fprintf(2, "Unknown test: %s. Use 1, 2, or 3.\n", argv[1]);
+        exit(1);
+    }
+
     exit(0);
 }
