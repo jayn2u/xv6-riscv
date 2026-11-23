@@ -43,6 +43,7 @@ sys_sbrk(void)
   uint64 addr;
   int t;
   int n;
+  struct proc *p = myproc();
 
   argint(0, &n);
   argint(1, &t);
@@ -64,7 +65,12 @@ sys_sbrk(void)
       return -1;
     if (addr + n > TRAPFRAME)
       return -1;
-    myproc()->sz += n;
+    for (int i = 0; i < MAX_MMAP; i++) {
+      if (p->mmap_used[i] == 0) continue;
+      if (p->mmapped[i] >= addr && p->mmapped[i] < addr + n) return -1;
+    }
+    
+    p->sz += n;
   }
   return addr;
 }
@@ -128,6 +134,7 @@ sys_mmap(void)
     return -1;
 
   struct proc *p = myproc();
+  if (addr < p->sz) return -1;
 
   if (addr >= MAXVA)
     return -1;

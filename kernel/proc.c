@@ -253,6 +253,10 @@ growproc(int n)
     if(sz + n > TRAPFRAME) {
       return -1;
     }
+      for (int i = 0; i < MAX_MMAP; i++) {
+        if (p->mmap_used[i] == 0) continue;
+        if (sz + n > p->mmapped[i] && sz <= p->mmapped[i]) return -1;
+      }
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
       return -1;
     }
