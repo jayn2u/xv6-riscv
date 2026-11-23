@@ -315,7 +315,8 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       continue; // physical page hasn't been allocated
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if (flags & PTE_W) {
+    if (flags & PTE_W)
+    {
       flags &= ~PTE_W;
       flags |= PTE_COW;
       *pte = PA2PTE(pa) | flags;
@@ -369,9 +370,11 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     }
 
     pte = walk(pagetable, va0, 0);
-    if (pte != 0 && (*pte & PTE_COW)) {
+    if (pte != 0 && (*pte & PTE_COW))
+    {
       pa0 = vmfault(pagetable, va0, 0);
-      if (pa0 == 0) return -1;
+      if (pa0 == 0)
+        return -1;
     }
     // forbid copyout over read-only user text pages.
     if ((*pte & PTE_W) == 0)
@@ -484,17 +487,19 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   va = PGROUNDDOWN(va);
   pte_t *pte = walk(pagetable, va, 0);
   if (!read && pte != 0 &&
-  (*pte & PTE_V) && (*pte & PTE_U) &&
-  (*pte & PTE_COW)) {
+      (*pte & PTE_V) && (*pte & PTE_U) &&
+      (*pte & PTE_COW))
+  {
     mem = (uint64)kalloc();
-    if (mem == 0) return 0;
+    if (mem == 0)
+      return 0;
     uint64 oldpa = PTE2PA(*pte);
-    memmove((void*)mem, (void*)oldpa, PGSIZE);
+    memmove((void *)mem, (void *)oldpa, PGSIZE);
     uint flags = PTE_FLAGS(*pte);
     flags &= ~PTE_COW;
     flags |= PTE_W;
     *pte = PA2PTE(mem) | flags;
-    kfree((void*)oldpa);
+    kfree((void *)oldpa);
     return mem;
   }
   if (ismapped(pagetable, va))
