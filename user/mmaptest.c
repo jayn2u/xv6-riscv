@@ -25,6 +25,9 @@ int main(int argc, char *argv[])
 
     printpagetbl();
 
+    printf("Before fork: buffer = %c\n", cowbuf[0]);
+    printf("Find the mapping for cowbuf VA = %p in each snapshot\n",
+           (void *)cowbuf);
     int pid = fork();
     if (pid < 0)
     {
@@ -34,7 +37,12 @@ int main(int argc, char *argv[])
 
     if (pid == 0)
     {
+        printf("=== Child BEFORE writing cowbuf ===\n");
+        printpagetbl();
         cowbuf[0] = 'B';
+        printf("=== Child AFTER writing cowbuf ===\n");
+        printpagetbl();
+        printf("Child after write: buffer = %c (expected B)\n", cowbuf[0]);
         if (cowbuf[0] != 'B')
             exit(1);
 
@@ -43,6 +51,9 @@ int main(int argc, char *argv[])
 
     int status = -1;
     int child = wait(&status);
+    printf("=== Parent AFTER child finishes ===\n");
+    printpagetbl();
+    printf("Parent after waiting: buffer = %c (expected A)\n", cowbuf[0]);
 
     if (child != pid || status != 0)
     {
