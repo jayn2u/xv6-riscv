@@ -21,6 +21,10 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  // 2 : Parent and child share it. Keep the page.
+  // 1 : One owner remains. Keep the page.
+  // 0 : Nobody needs it. Free the page.
+  int refcnt[(PHYSTOP - KERNBASE) / PGSIZE];
 } kmem;
 
 void
@@ -35,8 +39,11 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    int index = ((uint64)p - KERNBASE) / PGSIZE;
+    kmem.refcnt[index] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -52,11 +59,18 @@ kfree(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
+  acquire(&kmem.lock);
+  int index = ((uint64)pa - KERNBASE) / PGSIZE;
+  kmem.refcnt[index]--;
+  if (kmem.refcnt[index] > 0) {
+    release(&kmem.lock);
+    return;
+  }
+  
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -72,11 +86,31 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    kmem.refcnt[((uint64)r - KERNBASE)/PGSIZE] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+void
+krefincre(uint64 pa)
+{
+  int index = (pa - KERNBASE) / PGSIZE;
+  acquire(&kmem.lock);
+  kmem.refcnt[index]++;
+  release(&kmem.lock);
+}
+
+void
+krefdecre(uint64 pa)
+{
+  int index = (pa - KERNBASE) / PGSIZE;
+  acquire(&kmem.lock);
+  kmem.refcnt[index]--;
+  release(&kmem.lock);
 }
