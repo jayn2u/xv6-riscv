@@ -413,6 +413,8 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     n = PGSIZE - (srcva - va0);
     if (n > len)
       n = len;
+    pte_t *pte = walk(pagetable, va0, 0);
+    if (pte == 0 || (*pte & PTE_R) == 0) return -1;
     memmove(dst, (void *)(pa0 + (srcva - va0)), n);
 
     len -= n;
